@@ -134,11 +134,12 @@ if not st.session_state.autenticado:
     st.stop()
 
 # -----------------------------------------------------------------------------
-# Funções de Apoio
+# Funções de Apoio (COM CORREÇÃO DE MAIÚSCULAS)
 # -----------------------------------------------------------------------------
 def obter_lista_setores():
     try:
         df = pd.read_sql("SELECT NOME FROM SETORES ORDER BY NOME", con=engine)
+        df.columns = df.columns.str.upper() # Força colunas para maiúsculas
         return df["NOME"].tolist()
     except Exception:
         return ["ERRO AO CARREGAR SETORES"]
@@ -146,13 +147,16 @@ def obter_lista_setores():
 def obter_lista_tipos():
     try:
         df = pd.read_sql("SELECT NOME FROM TIPOS_CONSUMO ORDER BY NOME", con=engine)
+        df.columns = df.columns.str.upper() # Força colunas para maiúsculas
         return df["NOME"].tolist()
     except Exception:
         return ["ERRO AO CARREGAR TIPOS"]
 
 def carregar_utilizadores():
     try:
-        return pd.read_sql("SELECT ID, NOME FROM USUARIOS", con=engine)
+        df = pd.read_sql("SELECT ID, NOME FROM USUARIOS", con=engine)
+        df.columns = df.columns.str.upper() # Força colunas para maiúsculas
+        return df
     except Exception:
         return pd.DataFrame()
 
@@ -290,11 +294,13 @@ if submetido:
         st.sidebar.error(f"Erro ao guardar: {e}")
 
 # -----------------------------------------------------------------------------
-# 5. Dashboard Principal e Abas
+# 5. Dashboard Principal e Abas (COM CORREÇÃO DE MAIÚSCULAS)
 # -----------------------------------------------------------------------------
 def carregar_dados_reais():
     try:
-        return pd.read_sql("SELECT * FROM LEITURAS_CONSUMO", con=engine)
+        df = pd.read_sql("SELECT * FROM LEITURAS_CONSUMO", con=engine)
+        df.columns = df.columns.str.upper() # Força colunas para maiúsculas
+        return df
     except Exception:
         return pd.DataFrame()
 
