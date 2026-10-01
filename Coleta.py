@@ -6,6 +6,7 @@ from datetime import datetime
 import plotly.express as px
 import io
 import base64
+import urllib.parse
 
 st.set_page_config(
     page_title="Dashboard de Eficiência Energética",
@@ -26,7 +27,11 @@ st.markdown("""
 # Configuração da Conexão PostgreSQL usando os Segredos do Streamlit
 try:
     db_config = st.secrets["postgres"]
-    DATABASE_URL = f"postgresql+psycopg2://{db_config['user']}:{db_config['password']}@{db_config['host']}:{db_config['port']}/{db_config['database']}"
+    
+    # Codifica a password para lidar com caracteres especiais como o @
+    senha_segura = urllib.parse.quote_plus(db_config['password'])
+    
+    DATABASE_URL = f"postgresql+psycopg2://{db_config['user']}:{senha_segura}@{db_config['host']}:{db_config['port']}/{db_config['database']}"
     engine = create_engine(DATABASE_URL)
 except Exception as e:
     st.error(f"Erro ao configurar os segredos do PostgreSQL: {e}")
