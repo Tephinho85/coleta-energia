@@ -17,8 +17,8 @@ st.set_page_config(
 # Injeção de CSS focada EXCLUSIVAMENTE nos campos de texto específicos
 st.markdown("""
     <style>
-        input[aria-label="Utilizador:"] { text-transform: uppercase !important; }
-        input[aria-label="Nome do Utilizador:"] { text-transform: uppercase !important; }
+        input[aria-label="Usuario:"] { text-transform: uppercase !important; }
+        input[aria-label="Nome do Usuario:"] { text-transform: uppercase !important; }
         input[aria-label="Nome do Setor:"] { text-transform: uppercase !important; }
         input[aria-label="Nome e Unidade (ex: GÁS GLP (KG)):"] { text-transform: uppercase !important; }
     </style>
@@ -99,7 +99,7 @@ def preparar_banco():
             for tipo in ["ENERGIA ELÉTRICA (KWH)", "VAPOR (KG)", "ÁGUA (M3)"]:
                 conn.execute(text("INSERT INTO TIPOS_CONSUMO (NOME) VALUES (:nome) ON CONFLICT (NOME) DO NOTHING"), {"nome": tipo})
 
-        # Utilizadores padrão iniciais
+        # Usuarioes padrão iniciais
         res_users = conn.execute(text("SELECT COUNT(*) FROM USUARIOS")).scalar()
         if res_users == 0:
             conn.execute(text("INSERT INTO USUARIOS (NOME, SENHA) VALUES (:nome, :senha) ON CONFLICT (NOME) DO NOTHING"), {"nome": "TEPHINHO", "senha": "1234"})
@@ -136,7 +136,7 @@ if not st.session_state.autenticado:
                         st.success("Autenticação bem-sucedida!")
                         st.rerun()
                     else:
-                        st.error("Utilizador ou palavra-passe incorretos.")
+                        st.error("Usuario ou Senha incorretos.")
             except Exception as e:
                 st.error(f"Erro na autenticação: {e}")
     st.stop()
@@ -160,7 +160,7 @@ def obter_lista_tipos():
     except Exception:
         return ["ERRO AO CARREGAR TIPOS"]
 
-def carregar_utilizadores():
+def carregar_Usuarioes():
     try:
         df = pd.read_sql("SELECT ID, NOME FROM USUARIOS", con=engine)
         df.columns = df.columns.str.upper()
@@ -169,7 +169,7 @@ def carregar_utilizadores():
         return pd.DataFrame()
 
 # -----------------------------------------------------------------------------
-# 3. Barra Lateral: Utilizador, Cadastros e Painel Admin
+# 3. Barra Lateral: Usuario, Cadastros e Painel Admin
 # -----------------------------------------------------------------------------
 st.sidebar.title(f"👤 Olá, {st.session_state.usuario_atual}")
 if st.sidebar.button("Terminar Sessão"):
@@ -180,12 +180,12 @@ if st.sidebar.button("Terminar Sessão"):
 st.sidebar.divider()
 st.sidebar.title("⚙️ Cadastros e Administração")
 
-with st.sidebar.expander("👥 Gerir Utilizadores"):
+with st.sidebar.expander("👥 Gerenciar Usuarios"):
     st.markdown("**Cadastrar Novo Operador**")
     with st.form("form_novo_usuario", clear_on_submit=True):
-        novo_user = st.text_input("Nome do Utilizador:")
-        nova_senha = st.text_input("Palavra-passe:", type="password")
-        if st.form_submit_button("Criar Utilizador"):
+        novo_user = st.text_input("Nome do Usuario:")
+        nova_senha = st.text_input("Senha:", type="password")
+        if st.form_submit_button("Criar Usuario"):
             if novo_user.strip() and nova_senha.strip():
                 user_novo_formatado = novo_user.strip().upper()
                 try:
@@ -194,26 +194,26 @@ with st.sidebar.expander("👥 Gerir Utilizadores"):
                             text("INSERT INTO USUARIOS (NOME, SENHA) VALUES (:nome, :senha)"),
                             {"nome": user_novo_formatado, "senha": nova_senha}
                         )
-                    st.success(f"Utilizador '{user_novo_formatado}' criado!")
+                    st.success(f"Usuario '{user_novo_formatado}' criado!")
                     st.rerun()
                 except Exception:
-                    st.error("Este utilizador já existe ou ocorreu um erro.")
+                    st.error("Este Usuario já existe ou ocorreu um erro.")
             else:
                 st.warning("Preencha todos os campos.")
                 
     st.markdown("---")
-    st.markdown("**Remover Utilizador**")
-    df_users = carregar_utilizadores()
+    st.markdown("**Remover Usuario**")
+    df_users = carregar_Usuarioes()
     if not df_users.empty:
-        user_para_apagar = st.selectbox("Selecione o utilizador:", options=df_users["NOME"].tolist(), key="del_user_select")
-        if st.button("🗑️ Eliminar Utilizador", type="primary"):
+        user_para_apagar = st.selectbox("Selecione o Usuario:", options=df_users["NOME"].tolist(), key="del_user_select")
+        if st.button("🗑️ Eliminar Usuario", type="primary"):
             if user_para_apagar in ["TEPHINHO", "ADM"] and st.session_state.usuario_atual != user_para_apagar:
-                st.error("Não pode apagar utilizadores mestres principais.")
+                st.error("Não pode apagar Usuarioes mestres principais.")
             else:
                 try:
                     with engine.begin() as conn:
                         conn.execute(text("DELETE FROM USUARIOS WHERE NOME = :nome"), {"nome": user_para_apagar})
-                    st.success(f"Utilizador '{user_para_apagar}' eliminado!")
+                    st.success(f"Usuario '{user_para_apagar}' eliminado!")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Erro ao eliminar: {e}")
