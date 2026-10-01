@@ -116,7 +116,7 @@ if "autenticado" not in st.session_state:
 
 if not st.session_state.autenticado:
     st.title("🔐 Acesso Restrito - Coleta de Consumo")
-    st.markdown("Por favor, efetue o login com as suas credenciais para aceder ao sistema.")
+    st.markdown("Por favor, efetue o login com as suas credenciais para acessar o sistema.")
     
     with st.form("form_login"):
         user_input = st.text_input("Usuario:")
