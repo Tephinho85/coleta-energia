@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
 import pandas as pd
-import sqlite3
+from sqlalchemy import create_engine, text
 from datetime import datetime
 import plotly.express as px
 import io
-import base64 # Biblioteca adicionada para converter a imagem
+import base64
 
 st.set_page_config(
     page_title="Dashboard de Eficiência Energética",
@@ -23,70 +23,74 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-DB_FILE = "banco_coleta.db"
+# Configuração da Conexão PostgreSQL usando os Segredos do Streamlit
+try:
+    db_config = st.secrets["postgres"]
+    DATABASE_URL = f"postgresql+psycopg2://{db_config['user']}:{db_config['password']}@{db_config['host']}:{db_config['port']}/{db_config['database']}"
+    engine = create_engine(DATABASE_URL)
+except Exception as e:
+    st.error(f"Erro ao configurar os segredos do PostgreSQL: {e}")
+    st.stop()
 
 # -----------------------------------------------------------------------------
-# 1. Configuração da Base de Dados
+# 1. Configuração da Base de Dados (PostgreSQL)
 # -----------------------------------------------------------------------------
 def preparar_banco():
-    with sqlite3.connect(DB_FILE) as conn:
-        cursor = conn.cursor()
-        
-        cursor.execute("""
+    with engine.begin() as conn:
+        conn.execute(text("""
         CREATE TABLE IF NOT EXISTS LEITURAS_CONSUMO (
-            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            ID SERIAL PRIMARY KEY,
             DATA_LEITURA TEXT,
             UNIDADE TEXT,
             SETOR TEXT,
             TIPO_CONSUMO TEXT,
-            LEITURA REAL,
-            PRODUCAO_TON REAL,
+            LEITURA DOUBLE PRECISION,
+            PRODUCAO_TON DOUBLE PRECISION,
             COLABORADOR TEXT,
-            DATA_REGISTO DATETIME DEFAULT CURRENT_TIMESTAMP
+            DATA_REGISTO TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOTO_EVIDENCIA TEXT
         )
-        """)
+        """))
         
-        # Atualização dinâmica: Adiciona a coluna FOTO_EVIDENCIA se não existir (protege os seus dados)
-        cursor.execute("PRAGMA table_info(LEITURAS_CONSUMO)")
-        colunas_existentes = [info[1] for info in cursor.fetchall()]
-        if "FOTO_EVIDENCIA" not in colunas_existentes:
-            cursor.execute("ALTER TABLE LEITURAS_CONSUMO ADD COLUMN FOTO_EVIDENCIA TEXT")
-        
-        cursor.execute("""
+        conn.execute(text("""
         CREATE TABLE IF NOT EXISTS SETORES (
-            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            ID SERIAL PRIMARY KEY,
             NOME TEXT UNIQUE
         )
-        """)
+        """))
         
-        cursor.execute("""
+        conn.execute(text("""
         CREATE TABLE IF NOT EXISTS TIPOS_CONSUMO (
-            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            ID SERIAL PRIMARY KEY,
             NOME TEXT UNIQUE
         )
-        """)
+        """))
 
-        cursor.execute("""
+        conn.execute(text("""
         CREATE TABLE IF NOT EXISTS USUARIOS (
-            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            ID SERIAL PRIMARY KEY,
             NOME TEXT UNIQUE,
             SENHA TEXT
         )
-        """)
+        """))
         
-        cursor.execute("SELECT COUNT(*) FROM SETORES")
-        if cursor.fetchone()[0] == 0:
-            cursor.executemany("INSERT INTO SETORES (NOME) VALUES (?)", [("INDÚSTRIA",), ("LAVANDERIA",), ("CALDEIRA",)])
+        # Dados padrão de setores
+        res_setores = conn.execute(text("SELECT COUNT(*) FROM SETORES")).scalar()
+        if res_setores == 0:
+            for setor in ["INDÚSTRIA", "LAVANDERIA", "CALDEIRA"]:
+                conn.execute(text("INSERT INTO SETORES (NOME) VALUES (:nome) ON CONFLICT (NOME) DO NOTHING"), {"nome": setor})
             
-        cursor.execute("SELECT COUNT(*) FROM TIPOS_CONSUMO")
-        if cursor.fetchone()[0] == 0:
-            cursor.executemany("INSERT INTO TIPOS_CONSUMO (NOME) VALUES (?)", [("ENERGIA ELÉTRICA (KWH)",), ("VAPOR (KG)",), ("ÁGUA (M3)",)])
+        # Dados padrão de tipos de consumo
+        res_tipos = conn.execute(text("SELECT COUNT(*) FROM TIPOS_CONSUMO")).scalar()
+        if res_tipos == 0:
+            for tipo in ["ENERGIA ELÉTRICA (KWH)", "VAPOR (KG)", "ÁGUA (M3)"]:
+                conn.execute(text("INSERT INTO TIPOS_CONSUMO (NOME) VALUES (:nome) ON CONFLICT (NOME) DO NOTHING"), {"nome": tipo})
 
-        cursor.execute("SELECT COUNT(*) FROM USUARIOS")
-        if cursor.fetchone()[0] == 0:
-            cursor.execute("INSERT INTO USUARIOS (NOME, SENHA) VALUES (?, ?)", ("TEPHINHO", "1234"))
-            
-        conn.commit()
+        # Utilizadores padrão iniciais
+        res_users = conn.execute(text("SELECT COUNT(*) FROM USUARIOS")).scalar()
+        if res_users == 0:
+            conn.execute(text("INSERT INTO USUARIOS (NOME, SENHA) VALUES (:nome, :senha) ON CONFLICT (NOME) DO NOTHING"), {"nome": "TEPHINHO", "senha": "1234"})
+            conn.execute(text("INSERT INTO USUARIOS (NOME, SENHA) VALUES (:nome, :senha) ON CONFLICT (NOME) DO NOTHING"), {"nome": "ADM", "senha": "Frisa@59"})
 
 preparar_banco()
 
@@ -108,21 +112,20 @@ if not st.session_state.autenticado:
         
         if btn_entrar:
             user_limpo = user_input.strip()
-            with sqlite3.connect(DB_FILE) as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT NOME FROM USUARIOS 
-                    WHERE UPPER(NOME) = UPPER(?) AND SENHA = ?
-                """, (user_limpo, pass_input))
-                resultado = cursor.fetchone()
-                
-                if resultado:
-                    st.session_state.autenticado = True
-                    st.session_state.usuario_atual = resultado[0].upper()
-                    st.success("Autenticação bem-sucedida!")
-                    st.rerun()
-                else:
-                    st.error("Utilizador ou palavra-passe incorretos.")
+            try:
+                with engine.connect() as conn:
+                    query = text("SELECT NOME FROM USUARIOS WHERE UPPER(NOME) = UPPER(:user) AND SENHA = :senha")
+                    resultado = conn.execute(query, {"user": user_limpo, "senha": pass_input}).fetchone()
+                    
+                    if resultado:
+                        st.session_state.autenticado = True
+                        st.session_state.usuario_atual = resultado[0].upper()
+                        st.success("Autenticação bem-sucedida!")
+                        st.rerun()
+                    else:
+                        st.error("Utilizador ou palavra-passe incorretos.")
+            except Exception as e:
+                st.error(f"Erro na autenticação: {e}")
     st.stop()
 
 # -----------------------------------------------------------------------------
@@ -130,24 +133,21 @@ if not st.session_state.autenticado:
 # -----------------------------------------------------------------------------
 def obter_lista_setores():
     try:
-        with sqlite3.connect(DB_FILE) as conn:
-            df = pd.read_sql("SELECT NOME FROM SETORES ORDER BY NOME", con=conn)
-            return df["NOME"].tolist()
+        df = pd.read_sql("SELECT NOME FROM SETORES ORDER BY NOME", con=engine)
+        return df["NOME"].tolist()
     except Exception:
         return ["ERRO AO CARREGAR SETORES"]
 
 def obter_lista_tipos():
     try:
-        with sqlite3.connect(DB_FILE) as conn:
-            df = pd.read_sql("SELECT NOME FROM TIPOS_CONSUMO ORDER BY NOME", con=conn)
-            return df["NOME"].tolist()
+        df = pd.read_sql("SELECT NOME FROM TIPOS_CONSUMO ORDER BY NOME", con=engine)
+        return df["NOME"].tolist()
     except Exception:
         return ["ERRO AO CARREGAR TIPOS"]
 
 def carregar_utilizadores():
     try:
-        with sqlite3.connect(DB_FILE) as conn:
-            return pd.read_sql("SELECT ID, NOME FROM USUARIOS", con=conn)
+        return pd.read_sql("SELECT ID, NOME FROM USUARIOS", con=engine)
     except Exception:
         return pd.DataFrame()
 
@@ -172,13 +172,15 @@ with st.sidebar.expander("👥 Gerir Utilizadores"):
             if novo_user.strip() and nova_senha.strip():
                 user_novo_formatado = novo_user.strip().upper()
                 try:
-                    with sqlite3.connect(DB_FILE) as conn:
-                        conn.execute("INSERT INTO USUARIOS (NOME, SENHA) VALUES (?, ?)", (user_novo_formatado, nova_senha))
-                        conn.commit()
+                    with engine.begin() as conn:
+                        conn.execute(
+                            text("INSERT INTO USUARIOS (NOME, SENHA) VALUES (:nome, :senha)"),
+                            {"nome": user_novo_formatado, "senha": nova_senha}
+                        )
                     st.success(f"Utilizador '{user_novo_formatado}' criado!")
                     st.rerun()
-                except sqlite3.IntegrityError:
-                    st.error("Este utilizador já existe.")
+                except Exception:
+                    st.error("Este utilizador já existe ou ocorreu um erro.")
             else:
                 st.warning("Preencha todos os campos.")
                 
@@ -192,9 +194,8 @@ with st.sidebar.expander("👥 Gerir Utilizadores"):
                 st.error("Não pode apagar utilizadores mestres principais.")
             else:
                 try:
-                    with sqlite3.connect(DB_FILE) as conn:
-                        conn.execute("DELETE FROM USUARIOS WHERE NOME = ?", (user_para_apagar,))
-                        conn.commit()
+                    with engine.begin() as conn:
+                        conn.execute(text("DELETE FROM USUARIOS WHERE NOME = :nome"), {"nome": user_para_apagar})
                     st.success(f"Utilizador '{user_para_apagar}' eliminado!")
                     st.rerun()
                 except Exception as e:
@@ -207,12 +208,11 @@ with st.sidebar.expander("Adicionar Novo Setor"):
             if novo_setor.strip():
                 setor_formatado = novo_setor.strip().upper()
                 try:
-                    with sqlite3.connect(DB_FILE) as conn:
-                        conn.execute("INSERT INTO SETORES (NOME) VALUES (?)", (setor_formatado,))
-                        conn.commit()
+                    with engine.begin() as conn:
+                        conn.execute(text("INSERT INTO SETORES (NOME) VALUES (:nome)"), {"nome": setor_formatado})
                     st.sidebar.success(f"Setor '{setor_formatado}' adicionado!")
                     st.rerun()
-                except sqlite3.IntegrityError:
+                except Exception:
                     st.sidebar.error("Este setor já existe.")
             else:
                 st.sidebar.warning("Digite um nome válido.")
@@ -224,12 +224,11 @@ with st.sidebar.expander("Adicionar Tipo de Consumo"):
             if novo_tipo.strip():
                 tipo_formatado = novo_tipo.strip().upper()
                 try:
-                    with sqlite3.connect(DB_FILE) as conn:
-                        conn.execute("INSERT INTO TIPOS_CONSUMO (NOME) VALUES (?)", (tipo_formatado,))
-                        conn.commit()
+                    with engine.begin() as conn:
+                        conn.execute(text("INSERT INTO TIPOS_CONSUMO (NOME) VALUES (:nome)"), {"nome": tipo_formatado})
                     st.sidebar.success(f"Tipo '{tipo_formatado}' adicionado!")
                     st.rerun()
-                except sqlite3.IntegrityError:
+                except Exception:
                     st.sidebar.error("Este tipo já existe.")
             else:
                 st.sidebar.warning("Digite um nome válido.")
@@ -253,30 +252,35 @@ with st.sidebar.form("form_coleta", clear_on_submit=True):
     colaborador = st.session_state.usuario_atual
     data_leitura = st.date_input("Data Referência da Leitura:")
     
-    # Novo componente de câmara fotográfica
     foto_medidor = st.camera_input("📸 Foto do Medidor (Opcional)")
     
     submetido = st.form_submit_button("Guardar Leitura")
 
 if submetido:
-    # Lógica para converter a foto capturada em texto Base64
     foto_b64 = None
     if foto_medidor is not None:
         bytes_foto = foto_medidor.getvalue()
         foto_b64 = base64.b64encode(bytes_foto).decode('utf-8')
 
     try:
-        with sqlite3.connect(DB_FILE) as conn:
-            cursor = conn.cursor()
-            query_insercao = """
+        with engine.begin() as conn:
+            query_insercao = text("""
                 INSERT INTO LEITURAS_CONSUMO 
                 (DATA_LEITURA, UNIDADE, SETOR, TIPO_CONSUMO, LEITURA, PRODUCAO_TON, COLABORADOR, FOTO_EVIDENCIA)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """
-            cursor.execute(query_insercao, (str(data_leitura), unidade, setor, tipo, leitura, producao, colaborador, foto_b64))
-            conn.commit()
-            st.sidebar.success("Leitura guardada com sucesso!")
-            st.rerun()
+                VALUES (:d, :u, :s, :t, :l, :p, :c, :f)
+            """)
+            conn.execute(query_insercao, {
+                "d": str(data_leitura),
+                "u": unidade,
+                "s": setor,
+                "t": tipo,
+                "l": leitura,
+                "p": producao,
+                "c": colaborador,
+                "f": foto_b64
+            })
+        st.sidebar.success("Leitura guardada com sucesso!")
+        st.rerun()
     except Exception as e:
         st.sidebar.error(f"Erro ao guardar: {e}")
 
@@ -285,14 +289,13 @@ if submetido:
 # -----------------------------------------------------------------------------
 def carregar_dados_reais():
     try:
-        with sqlite3.connect(DB_FILE) as conn:
-            return pd.read_sql("SELECT * FROM LEITURAS_CONSUMO", con=conn)
+        return pd.read_sql("SELECT * FROM LEITURAS_CONSUMO", con=engine)
     except Exception:
         return pd.DataFrame()
 
 df_bruto = carregar_dados_reais()
 
-st.title("⚡ Dashboard Gerencial (Offline Mode)")
+st.title("⚡ Dashboard Gerencial (Cloud Mode)")
 
 if not df_bruto.empty:
     df_dashboard = df_bruto.copy()
@@ -356,7 +359,6 @@ if not df_bruto.empty:
 
     with aba_gestao:
         st.subheader("Gestão de Registros (Editar / Eliminar)")
-        # Esconde a coluna do Base64 da tabela principal por ser um texto gigante
         colunas_exibicao = ["ID", "DATA_LEITURA", "UNIDADE", "SETOR", "TIPO_CONSUMO", "LEITURA", "PRODUCAO_TON", "COLABORADOR"]
         st.dataframe(df_bruto[colunas_exibicao], use_container_width=True)
         
@@ -374,9 +376,11 @@ if not df_bruto.empty:
                     
                     if st.form_submit_button("Atualizar Registro"):
                         try:
-                            with sqlite3.connect(DB_FILE) as conn:
-                                conn.execute("UPDATE LEITURAS_CONSUMO SET LEITURA = ?, PRODUCAO_TON = ? WHERE ID = ?", (nova_leitura, nova_producao, int(id_alvo)))
-                                conn.commit()
+                            with engine.begin() as conn:
+                                conn.execute(
+                                    text("UPDATE LEITURAS_CONSUMO SET LEITURA = :l, PRODUCAO_TON = :p WHERE ID = :id"),
+                                    {"l": nova_leitura, "p": nova_producao, "id": int(id_alvo)}
+                                )
                             st.success("Atualizado com sucesso!")
                             st.rerun()
                         except Exception as e:
@@ -386,9 +390,8 @@ if not df_bruto.empty:
                 st.warning("Ação irreversível.")
                 if st.button("🗑️ Eliminar Registro", type="primary"):
                     try:
-                        with sqlite3.connect(DB_FILE) as conn:
-                            conn.execute("DELETE FROM LEITURAS_CONSUMO WHERE ID = ?", (int(id_alvo),))
-                            conn.commit()
+                        with engine.begin() as conn:
+                            conn.execute(text("DELETE FROM LEITURAS_CONSUMO WHERE ID = :id"), {"id": int(id_alvo)})
                         st.success("Eliminado com sucesso!")
                         st.rerun()
                     except Exception as e:
@@ -397,10 +400,9 @@ if not df_bruto.empty:
             with col_foto:
                 st.markdown("**Evidência Fotográfica:**")
                 if "FOTO_EVIDENCIA" in registo_selecionado and pd.notna(registo_selecionado["FOTO_EVIDENCIA"]):
-                    # Decodifica e exibe a imagem no painel de gestão
                     imagem_bytes = base64.b64decode(registo_selecionado["FOTO_EVIDENCIA"])
                     st.image(imagem_bytes, caption=f"Foto do Medidor (ID: {id_alvo})", use_column_width=True)
                 else:
                     st.info("Nenhuma fotografia anexada a este registo.")
 else:
-    st.info("Nenhuma leitura registrada no banco local ainda. Faça login e utilize o menu lateral.")
+    st.info("Nenhuma leitura registrada na base de dados na nuvem ainda. Utilize o menu lateral para iniciar.")
