@@ -119,8 +119,8 @@ if not st.session_state.autenticado:
     st.markdown("Por favor, efetue o login com as suas credenciais para aceder ao sistema.")
     
     with st.form("form_login"):
-        user_input = st.text_input("Utilizador:")
-        pass_input = st.text_input("Palavra-passe:", type="password")
+        user_input = st.text_input("Usuario:")
+        pass_input = st.text_input("Senha:", type="password")
         btn_entrar = st.form_submit_button("Entrar no Sistema")
         
         if btn_entrar:
