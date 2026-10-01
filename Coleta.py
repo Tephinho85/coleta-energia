@@ -24,7 +24,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Configuração da Conexão PostgreSQL usando os Segredos do Streamlit
+# Configuração Otimizada da Conexão PostgreSQL com Connection Pooling
 try:
     db_config = st.secrets["postgres"]
     
@@ -32,7 +32,15 @@ try:
     senha_segura = urllib.parse.quote_plus(db_config['password'])
     
     DATABASE_URL = f"postgresql+psycopg2://{db_config['user']}:{senha_segura}@{db_config['host']}:{db_config['port']}/{db_config['database']}"
-    engine = create_engine(DATABASE_URL)
+    
+    # Motor otimizado com pool de conexões ativas para alta performance
+    engine = create_engine(
+        DATABASE_URL,
+        pool_size=5,
+        max_overflow=10,
+        pool_pre_ping=True,
+        pool_recycle=3600
+    )
 except Exception as e:
     st.error(f"Erro ao configurar os segredos do PostgreSQL: {e}")
     st.stop()
@@ -134,12 +142,12 @@ if not st.session_state.autenticado:
     st.stop()
 
 # -----------------------------------------------------------------------------
-# Funções de Apoio (COM CORREÇÃO DE MAIÚSCULAS)
+# Funções de Apoio
 # -----------------------------------------------------------------------------
 def obter_lista_setores():
     try:
         df = pd.read_sql("SELECT NOME FROM SETORES ORDER BY NOME", con=engine)
-        df.columns = df.columns.str.upper() # Força colunas para maiúsculas
+        df.columns = df.columns.str.upper()
         return df["NOME"].tolist()
     except Exception:
         return ["ERRO AO CARREGAR SETORES"]
@@ -147,7 +155,7 @@ def obter_lista_setores():
 def obter_lista_tipos():
     try:
         df = pd.read_sql("SELECT NOME FROM TIPOS_CONSUMO ORDER BY NOME", con=engine)
-        df.columns = df.columns.str.upper() # Força colunas para maiúsculas
+        df.columns = df.columns.str.upper()
         return df["NOME"].tolist()
     except Exception:
         return ["ERRO AO CARREGAR TIPOS"]
@@ -155,7 +163,7 @@ def obter_lista_tipos():
 def carregar_utilizadores():
     try:
         df = pd.read_sql("SELECT ID, NOME FROM USUARIOS", con=engine)
-        df.columns = df.columns.str.upper() # Força colunas para maiúsculas
+        df.columns = df.columns.str.upper()
         return df
     except Exception:
         return pd.DataFrame()
@@ -294,12 +302,12 @@ if submetido:
         st.sidebar.error(f"Erro ao guardar: {e}")
 
 # -----------------------------------------------------------------------------
-# 5. Dashboard Principal e Abas (COM CORREÇÃO DE MAIÚSCULAS)
+# 5. Dashboard Principal e Abas
 # -----------------------------------------------------------------------------
 def carregar_dados_reais():
     try:
         df = pd.read_sql("SELECT * FROM LEITURAS_CONSUMO", con=engine)
-        df.columns = df.columns.str.upper() # Força colunas para maiúsculas
+        df.columns = df.columns.str.upper()
         return df
     except Exception:
         return pd.DataFrame()
@@ -321,7 +329,7 @@ if not df_bruto.empty:
         indicador = total_leitura / total_producao if total_producao > 0 else 0
 
         col1, col2, col3 = st.columns(3)
-        col1.metric("Consumo Acumulado", f"{total_leitura:,.0f}")
+        col1.metric("Consumo Acumulado", f"{total_leitalec:,.0f}" if 'total_leitalec' in locals() else f"{total_leitura:,.0f}")
         col2.metric("Produção Acumulada", f"{total_producao:,.0f}")
         col3.metric("Eficiência Geral (Consumo/Ton)", f"{indicador:,.2f}")
 
